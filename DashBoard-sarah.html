@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Dashboard - Soso</title>
+  <link rel="stylesheet" href="train-system-style.css"> 
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  Train Schedule and Reservation Management System
+</div>
+
+<!-- Layout -->
+<div class="layout">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <h3>Menu</h3>
+    <button onclick="showSectionSoso('schedule')">Schedule Management</button>
+    <button onclick="showSectionSoso('route')">Route & Time</button>
+    <button onclick="showSectionSoso('capacity')">Seat Capacity</button>
+  </div>
+
+  <!-- Content -->
+  <div class="content">
+
+    <!-- Schedule Section -->
+    <div id="schedule" class="section">
+      <h2>Train Schedule Management</h2>
+      <input type="text" id="train" placeholder="Train Name">
+      <button onclick="addScheduleSoso()">Add Schedule</button>
+    </div>
+
+    <!-- Route Section -->
+    <div id="route" class="section">
+      <h2>Route and Time Definition</h2>
+      <input type="text" id="routeInput" placeholder="Route">
+      <input type="text" id="timeInput" placeholder="Time">
+      <button onclick="addRouteSoso()">Add</button>
+    </div>
+
+    <!-- Capacity Section -->
+    <div id="capacity" class="section">
+      <h2>Seat Capacity Configuration</h2>
+      <input type="number" id="cap" placeholder="Capacity">
+      <button onclick="setCapacitySoso()">Set</button>
+    </div>
+
+    <p id="output"></p>
+
+  </div>
+</div>
+
+<script src="train-system-app-soso.js"></script> 
+</body>
+</html>
