@@ -1,30 +1,31 @@
-const { defineConfig } = require('@playwright/test');
+const { defineConfig, devices } = require('@playwright/test');
 
-const isWindows = process.platform === 'win32';
+const PORT = 4173;
+const BASE_URL = `http://127.0.0.1:${PORT}`;
+const isCI = Boolean(process.env.CI);
 
 module.exports = defineConfig({
   testDir: './tests',
   testMatch: '**/*.spec.js',
   fullyParallel: true,
-  forbidOnly: Boolean(process.env.CI),
-  retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 2 : undefined,
+  forbidOnly: isCI,
+  retries: isCI ? 1 : 0,
+  workers: isCI ? 2 : undefined,
   reporter: [
-    ['list'],
+    [isCI ? 'github' : 'list'],
     ['html', { outputFolder: 'playwright-report', open: 'never' }]
   ],
   use: {
-    baseURL: 'http://127.0.0.1:4173',
-    browserName: 'chromium',
+    ...devices['Desktop Chrome'],
+    baseURL: BASE_URL,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure'
   },
   webServer: {
-    command: isWindows
-      ? 'npx.cmd http-server . -p 4173 -c-1'
-      : 'npx http-server . -p 4173 -c-1',
-    url: 'http://127.0.0.1:4173',
-    reuseExistingServer: !process.env.CI,
+    // Serve the app locally; bound to loopback so it is never exposed on the network.
+    command: `npx http-server . -p ${PORT} -a 127.0.0.1 -c-1 --silent`,
+    url: BASE_URL,
+    reuseExistingServer: !isCI,
     timeout: 30_000
   }
 });

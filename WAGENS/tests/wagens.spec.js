@@ -1,19 +1,29 @@
 const { test, expect } = require('@playwright/test');
 
-const BASE_URL = 'http://127.0.0.1:4173';
+const DATA_KEYS = [
+  'passengers', 'trains', 'capacities', 'schedules', 'trainRoutes',
+  'routes', 'prices', 'bookings', 'reservations', 'bookingLogs'
+];
 
-async function invoke(page, functionName, fields = {}, storage = {}) {
-  return page.evaluate(({ functionName, fields, storage }) => {
+/**
+ * Fills form fields, seeds localStorage, signs in as `role` (null = signed out),
+ * calls one app function and returns the resulting state.
+ * Awaits the call, so async functions such as doLogin work too.
+ */
+async function invoke(page, functionName, fields = {}, storage = {}, role = 'admin') {
+  return page.evaluate(async ({ functionName, fields, storage, role, dataKeys }) => {
     for (const [key, value] of Object.entries(storage)) {
       localStorage.setItem(key, JSON.stringify(value));
     }
+    if (role) sessionStorage.setItem('role', role);
+    else sessionStorage.removeItem('role');
 
     for (const [id, value] of Object.entries(fields)) {
       const element = document.getElementById(id);
       if (!element) throw new Error(`Required WAGENS element #${id} was not found`);
 
       if (element.tagName === 'SELECT') {
-        element.innerHTML = '';
+        element.replaceChildren();
         const values = Array.isArray(value) ? value : [value];
         for (const item of values) {
           if (item === null || item === undefined) continue;
@@ -32,13 +42,10 @@ async function invoke(page, functionName, fields = {}, storage = {}) {
     if (typeof fn !== 'function') {
       throw new Error(`WAGENS function "${functionName}" was not found on window`);
     }
-    fn();
+    await fn();
 
     const state = {};
-    for (const key of [
-      'passengers', 'trains', 'capacities', 'schedules', 'trainRoutes',
-      'routes', 'prices', 'bookings', 'reservations', 'bookingLogs'
-    ]) {
+    for (const key of dataKeys) {
       const raw = localStorage.getItem(key);
       if (raw !== null) state[key] = JSON.parse(raw);
     }
@@ -48,9 +55,9 @@ async function invoke(page, functionName, fields = {}, storage = {}) {
       output: document.getElementById('output')?.innerText || '',
       loginError: document.getElementById('loginError')?.innerText || '',
       username: document.getElementById('username')?.value || '',
-      role: localStorage.getItem('role')
+      role: sessionStorage.getItem('role')
     };
-  }, { functionName, fields, storage });
+  }, { functionName, fields, storage, role, dataKeys: DATA_KEYS });
 }
 
 async function stateOf(page, key) {
@@ -65,21 +72,18 @@ test.beforeEach(async ({ page }) => {
     localStorage.clear();
     sessionStorage.clear();
   });
-  await page.goto(BASE_URL);
+  await page.goto('/');
 
-  // Keep each case focused on the behavior being tested, not unrelated rendering.
-  // UI smoke tests below still verify that the page and key elements load.
+  // Keep each case focused on the behavior under test, not unrelated rendering.
+  // The smoke tests and security.spec.js exercise the real rendering.
   await page.evaluate(() => {
     window.refreshUI = () => {};
-    window.refreshAll = () => {};
     window.updateReports = () => {};
     window.renderPassengerTable = () => {};
     window.renderBookingTable = () => {};
     window.updateTrainDropdowns = () => {};
     window.updateRoutePriceDropdown = () => {};
     window.refreshStats = () => {};
-    window.getTrends = () => ({ mostTrain: '—', maxBookings: 0, mostRoute: '—', maxRoute: 0 });
-    window.updateAvailableSeats = () => {};
     window.updateTotalPrice = () => {};
     window.resetSessionTimer = () => {};
     window.initDash = () => {};
@@ -90,7 +94,7 @@ test.beforeEach(async ({ page }) => {
 const smokeChecks = [
   ['document body is visible', async ({ page }) => await expect(page.locator('body')).toBeVisible()],
   ['page has a non-empty body', async ({ page }) => await expect(page.locator('body')).not.toBeEmpty()],
-  ['page URL is the local WAGENS server', async ({ page }) => expect(page.url()).toContain('127.0.0.1:4173')],
+  ['page URL is the local WAGENS server', async ({ page }) => await expect(page).toHaveURL(/127\.0\.0\.1:4173/)],
   ['login username field exists', async ({ page }) => await expect(page.locator('#username')).toHaveCount(1)],
   ['login error area exists', async ({ page }) => await expect(page.locator('#loginError')).toHaveCount(1)],
   ['login page container exists', async ({ page }) => await expect(page.locator('#loginPage')).toHaveCount(1)],
@@ -103,31 +107,36 @@ for (const [name, run] of smokeChecks) {
   test(`Smoke: ${name}`, run);
 }
 
-// 20 login / role tests.
+// 20 login / role tests (+ 8 extra credential checks).
 const invalidUsernames = [
   'guest', 'manager', 'root', 'user', 'ADMINISTRATOR',
   'staff1', 'admin1', 'unknown', '12345', 'invalid user'
 ];
 for (const username of invalidUsernames) {
-  test(`Login rejects unsupported username: ${username}`, async ({ page }) => {
-    const result = await invoke(page, 'doLogin', { username });
-    expect(result.loginError).toContain("Use 'admin' or 'staff'.");
+  test(`Login rejects unknown username: ${username}`, async ({ page }) => {
+    const result = await invoke(page, 'doLogin', { username, password: 'admin123' }, {}, null);
+    expect(result.loginError).toContain('Invalid username or password.');
     expect(result.role).toBeNull();
   });
 }
-const validLoginValues = ['admin', 'staff', 'ADMIN', 'STAFF', ' admin '];
-for (const username of validLoginValues) {
-  test(`Login accepts supported role input: ${JSON.stringify(username)}`, async ({ page }) => {
-    const result = await invoke(page, 'doLogin', { username });
-    expect(['admin', 'staff']).toContain(result.role);
+const validLogins = [
+  ['admin', 'admin123', 'admin'], ['staff', 'staff123', 'staff'],
+  ['ADMIN', 'admin123', 'admin'], ['STAFF', 'staff123', 'staff'],
+  [' admin ', 'admin123', 'admin']
+];
+for (const [username, password, expectedRole] of validLogins) {
+  test(`Login accepts valid credentials: ${JSON.stringify(username)}`, async ({ page }) => {
+    const result = await invoke(page, 'doLogin', { username, password }, {}, null);
+    expect(result.role).toBe(expectedRole);
+    expect(result.loginError).toBe('');
   });
 }
 const roleSelections = [
   ['admin', 'admin'], ['staff', 'staff'], ['admin', 'admin'],
   ['staff', 'staff'], ['admin', 'admin']
 ];
-for (const [selected, expected] of roleSelections) {
-  test(`Role selector sets ${selected} in the username field (${expected})`, async ({ page }) => {
+for (const [index, [selected, expected]] of roleSelections.entries()) {
+  test(`Role selector case ${index + 1}: ${selected} fills the username field with ${expected}`, async ({ page }) => {
     const picked = await page.evaluate((role) => {
       window.pickRole(role);
       return {
@@ -140,6 +149,36 @@ for (const [selected, expected] of roleSelections) {
     expect(picked[`${selected}Class`]).toContain(selected === 'admin' ? 'admin-on' : 'staff-on');
   });
 }
+const wrongPasswords = [
+  ['admin', 'staff123'], ['staff', 'admin123'], ['admin', 'ADMIN123'],
+  ['staff', 'staff12'], ['admin', ' admin123']
+];
+for (const [username, password] of wrongPasswords) {
+  test(`Login rejects wrong password for ${username}: ${JSON.stringify(password)}`, async ({ page }) => {
+    const result = await invoke(page, 'doLogin', { username, password }, {}, null);
+    expect(result.loginError).toContain('Invalid username or password.');
+    expect(result.role).toBeNull();
+  });
+}
+for (const [username, password] of [['', 'admin123'], ['admin', '']]) {
+  test(`Login requires both fields: ${JSON.stringify([username, password])}`, async ({ page }) => {
+    const result = await invoke(page, 'doLogin', { username, password }, {}, null);
+    expect(result.loginError).toContain('Enter both username and password.');
+    expect(result.role).toBeNull();
+  });
+}
+test('Login locks out after repeated failures', async ({ page }) => {
+  let result;
+  for (let i = 0; i < 5; i++) {
+    result = await invoke(page, 'doLogin', { username: 'admin', password: `wrong${i}` }, {}, null);
+  }
+  expect(result.loginError).toContain('Too many attempts');
+  // even the correct password is refused while locked
+  result = await invoke(page, 'doLogin', { username: 'admin', password: 'admin123' }, {}, null);
+  expect(result.loginError).toContain('Too many attempts');
+  expect(result.role).toBeNull();
+});
+
 // 30 passenger tests: 10 valid, 10 invalid phone values, 10 invalid email values.
 const validPassengers = [
   ['Passenger01', '0500000001', 'p01@example.com'],
@@ -264,7 +303,7 @@ for (const [index, booked] of [2, 5, 10, 20, 99].entries()) {
     await invoke(page, 'setCapacity', { trainNameCap: train, cap: String(booked - 1) }, {
       capacities: { [train]: booked }, bookings: { [train]: booked }, trains: [train]
     });
-    expect(await stateOf(page, 'capacities')[train]).toBe(booked);
+    expect((await stateOf(page, 'capacities'))[train]).toBe(booked);
   });
 }
 
@@ -331,7 +370,7 @@ for (let i = 1; i <= 10; i++) {
       reservations: [], trainRoutes: { [train]: { route: 'Route A', time: '08:00' } }
     });
     expect(await stateOf(page, 'reservations') || []).toHaveLength(0);
-    expect(await stateOf(page, 'bookings')[train]).toBe(0);
+    expect((await stateOf(page, 'bookings'))[train]).toBe(0);
   });
 }
 for (let i = 1; i <= 5; i++) {
@@ -355,7 +394,7 @@ for (let i = 1; i <= 5; i++) {
       reservations: [], trainRoutes: { [train]: { route: 'Route Full', time: '09:00' } }
     });
     expect(await stateOf(page, 'reservations') || []).toHaveLength(0);
-    expect(await stateOf(page, 'bookings')[train]).toBe(capacity);
+    expect((await stateOf(page, 'bookings'))[train]).toBe(capacity);
   });
 }
 for (let i = 1; i <= 5; i++) {
@@ -368,7 +407,7 @@ for (let i = 1; i <= 5; i++) {
       reservations: [existing], trainRoutes: { [train]: { route: 'Route Dup', time: '10:00' } }
     });
     expect(await stateOf(page, 'reservations')).toHaveLength(1);
-    expect(await stateOf(page, 'bookings')[train]).toBe(1);
+    expect((await stateOf(page, 'bookings'))[train]).toBe(1);
   });
 }
 
@@ -380,7 +419,7 @@ for (let i = 1; i <= 10; i++) {
     await invoke(page, 'cancelBooking', { cancelTrainInput: train }, {
       bookings: { [train]: tickets }, reservations: [{ name: `CancelP${i}`, train, tickets, date: '2026-01-01' }]
     });
-    expect(await stateOf(page, 'bookings')[train]).toBe(tickets - 1);
+    expect((await stateOf(page, 'bookings'))[train]).toBe(tickets - 1);
     const reservations = await stateOf(page, 'reservations');
     if (tickets === 1) expect(reservations).toHaveLength(0);
     else expect(reservations[0].tickets).toBe(tickets - 1);

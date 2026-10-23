@@ -1,15 +1,19 @@
 {
   "name": "wagens",
   "version": "1.0.0",
-  "description": "",
-  "main": "script.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
+  "private": true,
+  "description": "WAGENS train schedule and reservation system",
   "license": "ISC",
   "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "http-server . -p 4173 -a 127.0.0.1 -c-1",
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:report": "playwright show-report"
+  },
   "devDependencies": {
     "@playwright/test": "^1.64.1",
     "http-server": "^14.1.1"
