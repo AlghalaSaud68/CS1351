@@ -21,6 +21,7 @@ jobs:
   playwright:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -31,14 +32,14 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install dependencies (from lockfile)
+      - name: Install dependencies from lockfile
         run: npm ci
 
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: ./node_modules/.bin/playwright install --with-deps chromium
 
       - name: Run WAGENS browser tests
-        run: npx playwright test
+        run: ./node_modules/.bin/playwright test
 
       - name: Upload Playwright HTML report
         if: ${{ !cancelled() }}
