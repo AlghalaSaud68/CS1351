@@ -13,6 +13,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: playwright-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   playwright:
     runs-on: ubuntu-latest
@@ -27,17 +31,17 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install project dependencies
-        run: npm install
+      - name: Install dependencies (from lockfile)
+        run: npm ci
 
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Run 200 WAGENS browser tests
+      - name: Run WAGENS browser tests
         run: npx playwright test
 
       - name: Upload Playwright HTML report
-        if: always()
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: wagens-playwright-report
